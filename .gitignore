@@ -16,21 +16,25 @@ env/
 .coverage
 htmlcov/
 
-# Data and generated artifacts (fetched or produced locally, never committed)
+# Datasets: ignore everything under data/ except the docs
 data/*
 !data/README.md
-results/
+
+# Per-epoch checkpoints and full run outputs are regenerated, not committed
+checkpoints/
+results/*
+!results/metrics.json
+
+# Model artifacts: ignore all weights except the small committed generator
 *.pt
 *.pth
 *.pth.tar
 *.ckpt
+!models/generator.pt
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Claude Code
-.claude/
 
 # Claude Code
 .claude/
