@@ -1,61 +1,126 @@
 # gan-image-generation
 
-A deep convolutional GAN (DCGAN) in PyTorch that generates handwritten-digit images from random noise. An original generator and discriminator, the standard non-saturating GAN training loop, and per-epoch sample grids that show the generator improve over training.
+A small DCGAN in PyTorch that learns to draw handwritten digits from noise. The
+generator starts from static and, epoch by epoch, resolves a fixed batch of
+random vectors into recognizable digits. That progression is the point of this
+repo, so it leads the page.
 
-## What it does
+![Training progression: a fixed batch of noise resolving into digits across 25 epochs](assets/training.gif)
 
-- Implements a generator (transposed convolutions, batch norm, ReLU, Tanh output) and a discriminator (strided convolutions, batch norm, LeakyReLU) from scratch, sized for 28x28 grayscale images.
-- Trains both networks together with the non-saturating GAN loss and the Adam settings from the DCGAN paper, on MNIST or Fashion-MNIST scaled to [-1, 1].
-- Snapshots a fixed batch of noise at several epochs to visualize learning progress, and writes a final sample grid, a progression grid, and generator/discriminator loss curves.
-- Ships unit tests that run on random tensors with no download, checking output shapes, the Tanh range, and that a training step runs.
+Each frame above is the same 64 latent vectors decoded by the generator after a
+given epoch, on MNIST. The images sharpen from noise to digit-like strokes as
+adversarial training proceeds. The generator here is deliberately compact and
+trained briefly on a CPU, so the final samples are legible rather than crisp.
+
+## Sample it yourself, offline
+
+The repo ships a pretrained generator at `models/generator.pt`. The quickstart
+loads it and writes a fresh 8x8 grid. No dataset, no training, no network.
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate         # Windows, or: source .venv/bin/activate
+pip install -e ".[dev]"        # add torch CPU wheel if needed, see below
+python scripts/generate.py     # writes results/generated.png
+```
+
+Change the noise with `--seed`, the count with `--n`, or point `--weights` at
+your own checkpoint. A grid produced this way looks like the examples below.
+
+## Gallery
+
+Two grids sampled from the committed generator with different noise seeds. These
+are generated images, not dataset digits, so nothing here redistributes MNIST.
+
+| seed 1 | seed 2 |
+| --- | --- |
+| ![Generated digit grid, seed 1](examples/grid_1.png) | ![Generated digit grid, seed 2](examples/grid_2.png) |
+
+## How it works
+
+- A generator maps a latent vector to a 1x28x28 image through transposed
+  convolutions with batch norm, ReLU, and a Tanh output. A discriminator maps an
+  image to a single real/fake logit through strided convolutions with LeakyReLU.
+  Both follow the DCGAN design rules but are written from scratch and sized for
+  28x28 grayscale rather than 64x64.
+- They train together with the non-saturating GAN loss and the Adam settings
+  from the DCGAN paper, on images scaled to [-1, 1] to match the Tanh output.
+- After every epoch the generator decodes a fixed batch of noise. Those
+  snapshots become the training GIF, and the final generator is saved as a small
+  checkpoint for instant sampling.
+
+## Retrain and rebuild the GIF
+
+Training pulls MNIST or Fashion-MNIST through torchvision on first use, then
+writes the GIF, loss curves, example grids, a metrics file, and the generator.
+
+```bash
+python scripts/download_data.py --root data --dataset mnist   # optional prefetch
+python scripts/train.py --dataset mnist --epochs 25 --subset 6000
+```
+
+Per-epoch generator checkpoints land in `checkpoints/` (gitignored) and the
+regenerated hero GIF overwrites `assets/training.gif`. On Linux CI, install the
+CPU build of PyTorch first: `pip install torch torchvision --index-url
+https://download.pytorch.org/whl/cpu`. Requires Python 3.11 or newer.
+
+## What the numbers say
+
+Measured this session by `python scripts/train.py --dataset mnist --epochs 25
+--subset 6000`: a DCGAN with a narrow generator (ngf 32), batch size 128, single
+seed, on a 6000-image MNIST subset, on a CPU, in about three and a half minutes.
+Full history is in `results/metrics.json`.
+
+GAN losses are not accuracy and lower is not better. What matters is that the two
+networks stay in balance rather than one collapsing. Across the 25 epochs the
+discriminator loss stayed in roughly 0.20 to 0.62 and the generator loss in
+roughly 1.94 to 2.89, with neither running to zero. Final values were
+discriminator 0.339 and generator 2.309. That stable equilibrium, visible in
+`assets/losses.png`, is the sign of healthy adversarial training.
+
+Sample quality is honest for the budget. By the final epoch a clear majority of
+the 64 samples are recognizable digits, with a minority still malformed or
+ambiguous. A wider generator, the full dataset, and longer training sharpen the
+output further, at the cost of the couple-of-minutes CPU runtime this demo is
+built around.
 
 ## What it does not do
 
-- No FID or Inception Score. Sample quality is shown qualitatively through the generated grids, not scored with a pretrained metric network.
-- No conditional generation, no progressive growing, no large or high-resolution images. The demo targets 28x28 digits so it trains on a CPU in minutes.
-- No stability tricks beyond the DCGAN recipe (no spectral norm, gradient penalty, or two-timescale update rule).
+- No FID or Inception Score. Quality is shown qualitatively through the grids and
+  the GIF, not scored with a pretrained metric network.
+- No conditional generation, no progressive growing, no high-resolution images.
+  The demo targets 28x28 digits so it trains on a CPU in minutes.
+- No stability tricks beyond the DCGAN recipe: no spectral norm, no gradient
+  penalty, no two-timescale update rule.
 
-## Install
-
-```
-python -m venv .venv
-.venv\Scripts\activate      # Windows, or: source .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-Requires Python 3.11 or newer. On Linux CI, install the CPU build of PyTorch first: `pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu`.
-
-## Run
+## Layout
 
 ```
-python scripts/download_data.py --root data --dataset mnist   # optional prefetch
-python scripts/train.py --dataset mnist --epochs 20           # train and save figures
-pytest -q                                                     # tests, fully offline
-```
-
-The demo notebook is `notebooks/demo.ipynb`, executed with saved outputs.
-
-## Results
-
-Produced by `python scripts/train.py --dataset mnist --epochs 20 --subset 12000`: a DCGAN trained on a 12000-image MNIST subset, batch size 128, single fixed seed, on a CPU.
-
-The two losses stay in a stable equilibrium across all 20 epochs rather than one network collapsing: the discriminator loss ranges roughly 0.43 to 0.82 and the generator loss roughly 1.52 to 2.11, with neither running to zero. That balance is the sign of healthy adversarial training, and it is visible in the saved loss curve.
-
-By the final epoch the generator produces a grid of 64 samples in which most images are clearly recognizable handwritten digits (zeros, fives, sixes, sevens, eights, and nines are all legible), with a minority still malformed or ambiguous, which is the expected quality for a compact DCGAN trained for 20 epochs on a subset. The progression grid shows the samples move from near-noise at the first snapshot toward digit-like strokes by the end. Longer training and the full dataset sharpen the samples further. The figures are written to `results/` by the training script and are also embedded, executed, in the demo notebook.
-
-## Package layout
-
-```
-src/dcgan/          library code (generator and discriminator, data, trainer)
-scripts/            download_data.py, train.py
+assets/             hero training.gif and losses.png
+examples/           generated digit grids (grid_1.png, grid_2.png)
+models/             generator.pt, the committed pretrained generator
+results/            metrics.json plus generated grids (mostly gitignored)
+src/dcgan/          library: models, data, trainer + checkpointing, visualize
+scripts/            generate.py (offline quickstart), train.py, download_data.py
 notebooks/          demo.ipynb with executed outputs
 tests/              pytest suite, runs on random tensors offline
 data/               gitignored, MNIST downloaded on demand
 ```
 
+## Tests
+
+```bash
+pytest -q
+```
+
+The suite runs fully offline on random tensors: it checks output shapes, the
+Tanh range, a single training step, checkpoint save and load round-trips, and
+that the grid and GIF writers produce files.
+
 ## References
 
-- Radford, Metz, Chintala, Unsupervised Representation Learning with Deep Convolutional Generative Adversarial Networks, 2016 (DCGAN).
+- Radford, Metz, Chintala, Unsupervised Representation Learning with Deep
+  Convolutional Generative Adversarial Networks, 2016 (DCGAN).
 - Goodfellow et al., Generative Adversarial Nets, 2014.
 
 ## Author
