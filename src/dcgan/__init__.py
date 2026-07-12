@@ -7,7 +7,14 @@ demo trains on MNIST or Fashion-MNIST.
 
 from dcgan.data import image_loaders
 from dcgan.models import Discriminator, Generator, weights_init
-from dcgan.train import GANTrainer, sample_grid, set_seed
+from dcgan.train import (
+    GANTrainer,
+    load_generator,
+    sample_grid,
+    save_generator,
+    set_seed,
+)
+from dcgan.visualize import save_grid_png, save_training_gif
 
 __all__ = [
     "Generator",
@@ -17,6 +24,10 @@ __all__ = [
     "GANTrainer",
     "sample_grid",
     "set_seed",
+    "save_generator",
+    "load_generator",
+    "save_grid_png",
+    "save_training_gif",
 ]
 
 __version__ = "0.1.0"

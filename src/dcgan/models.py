@@ -19,6 +19,7 @@ class Generator(nn.Module):
     def __init__(self, nz: int = 100, ngf: int = 64) -> None:
         super().__init__()
         self.nz = nz
+        self.ngf = ngf
         self.net = nn.Sequential(
             # nz x 1 x 1 -> (ngf*4) x 7 x 7
             nn.ConvTranspose2d(nz, ngf * 4, 7, 1, 0, bias=False),

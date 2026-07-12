@@ -1,9 +1,11 @@
-"""GAN training loop, sample-grid helper, and seeding."""
+"""GAN training loop, sample-grid helper, checkpointing, and seeding."""
 
 from __future__ import annotations
 
+import logging
 import random
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -12,12 +14,61 @@ from torch.utils.data import DataLoader
 
 from dcgan.models import Discriminator, Generator, weights_init
 
+logger = logging.getLogger("dcgan")
+
 
 def set_seed(seed: int = 0) -> None:
     """Seed Python, NumPy, and PyTorch."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+
+
+def save_generator(generator: Generator, path: str | Path, epoch: int | None = None) -> Path:
+    """Save a generator to ``path`` with the config needed to rebuild it.
+
+    The checkpoint is a plain dict of the state dict plus ``nz``, ``ngf``, and
+    the epoch, so :func:`load_generator` can reconstruct the architecture
+    without any external metadata.
+
+    Args:
+        generator: The generator to serialize.
+        path: Destination ``.pt`` file. Parent directories are created.
+        epoch: Optional epoch tag stored in the checkpoint.
+
+    Returns:
+        The path written to.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            "state_dict": generator.state_dict(),
+            "nz": generator.nz,
+            "ngf": generator.ngf,
+            "epoch": epoch,
+        },
+        path,
+    )
+    return path
+
+
+def load_generator(path: str | Path, device: str = "cpu") -> Generator:
+    """Rebuild a generator from a checkpoint written by :func:`save_generator`.
+
+    Args:
+        path: A ``.pt`` checkpoint file.
+        device: Device to place the generator on.
+
+    Returns:
+        A generator in eval mode with weights loaded.
+    """
+    ckpt = torch.load(path, map_location=device, weights_only=True)
+    generator = Generator(nz=int(ckpt["nz"]), ngf=int(ckpt["ngf"]))
+    generator.load_state_dict(ckpt["state_dict"])
+    generator.to(device)
+    generator.eval()
+    return generator
 
 
 @torch.no_grad()
@@ -76,6 +127,7 @@ class GANTrainer:
         sample_every: int = 0,
         fixed_noise: torch.Tensor | None = None,
         verbose: bool = True,
+        checkpoint_dir: str | Path | None = None,
     ) -> GANTrainer:
         """Train for ``epochs``.
 
@@ -86,7 +138,13 @@ class GANTrainer:
                 ``self.samples`` (requires ``fixed_noise``).
             fixed_noise: Latent vectors used for progress snapshots.
             verbose: Print per-epoch losses.
+            checkpoint_dir: If set, save the generator to
+                ``generator_epoch_XX.pt`` in this directory after each epoch and
+                log progress there.
         """
+        ckpt_dir = Path(checkpoint_dir) if checkpoint_dir is not None else None
+        if ckpt_dir is not None:
+            ckpt_dir.mkdir(parents=True, exist_ok=True)
         opt_g = torch.optim.Adam(self.generator.parameters(), lr=self.lr, betas=(self.beta1, 0.999))
         opt_d = torch.optim.Adam(
             self.discriminator.parameters(), lr=self.lr, betas=(self.beta1, 0.999)
@@ -125,13 +183,18 @@ class GANTrainer:
                 ed += loss_d.item() * bs
                 n += bs
 
-            self.history["loss_g"].append(eg / max(n, 1))
-            self.history["loss_d"].append(ed / max(n, 1))
+            mean_g = eg / max(n, 1)
+            mean_d = ed / max(n, 1)
+            self.history["loss_g"].append(mean_g)
+            self.history["loss_d"].append(mean_d)
+            msg = f"epoch {epoch + 1:3d}  loss_d={mean_d:.4f}  loss_g={mean_g:.4f}"
             if verbose:
-                print(
-                    f"epoch {epoch + 1:3d}  loss_d={ed / max(n, 1):.4f}  "
-                    f"loss_g={eg / max(n, 1):.4f}"
-                )
+                print(msg)
+            logger.info(msg)
             if sample_every and fixed_noise is not None and (epoch + 1) % sample_every == 0:
                 self.samples.append((epoch + 1, sample_grid(self.generator, fixed_noise)))
+            if ckpt_dir is not None:
+                save_generator(
+                    self.generator, ckpt_dir / f"generator_epoch_{epoch + 1:02d}.pt", epoch + 1
+                )
         return self
