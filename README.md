@@ -1,5 +1,7 @@
 # gan-image-generation
 
+*Origin: Originally developed for the Programming for AI course at KAIST (Fall 2020); refactored and open-sourced in July 2026.*
+
 A small DCGAN in PyTorch that learns to draw handwritten digits from noise. The
 generator starts from static and, epoch by epoch, resolves a fixed batch of
 random vectors into recognizable digits. That progression is the point of this
